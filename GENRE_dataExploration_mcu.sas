@@ -1,0 +1,129 @@
+/********************************************************************************************************************/
+/*							DATA EXPLORATION																		*/
+/********************************************************************************************************************/
+
+%let b=mcutot;					/*	Current database (can be modified depending model)	*/
+%let genre=Genre_mcu;			/*	Gender doesn't have the same name depending model	*/
+%let y=&genre.;			/*	In model 1, the response variable is the gender. In model 2, it is the type of nomination	*/
+%let event_noformat=f;						/*	Event to predic in macro using sql			*/
+%let event_withformat=femme;				/*	Event to predic in the logistic procedire	*/
+%let listvar_conti=Attractivite_region Attractivite_section Aggregate_impact_factor N_Region N_Section;
+%let listvar_categ=nomination &genre. TAUX_FEM_PH_QUIN Section Sous_section annee_cat annee region;
+
+ods html close;
+ods html path="&path.\300 result\images\&b.";
+
+/*---------------------------------------------------------------------------------------------------------------------------*/
+/*			Link between response (gender) and different explanatory variables												 */
+/*---------------------------------------------------------------------------------------------------------------------------*/
+
+/*	Difference of representation of qualitativ variables depending gender	*/
+%Prop_by_var(var_ventil=Section);
+%Prop_by_var(var_ventil=annee);
+%Prop_by_var(var_ventil=annee_cat);
+%Prop_by_var(var_ventil=Region);
+%Prop_by_var(var_ventil=Section);
+
+
+/*	Difference in the distribution of quantitativ variables depending gender	*/
+
+/* Boxplots */
+proc sort data=&b.;
+	by &genre.;
+proc boxplot data=&b.;
+	plot(Attractivite_region Attractivite_section Aggregate_impact_factor)*&y.;
+run;
+/* Mean, Minimum, Maximum, Standard Error, Number of individuals */
+proc means data=&b.;
+	var Attractivite_region Attractivite_section Aggregate_impact_factor;
+	class &genre.;
+	output out=Genre_vs_quali;
+run;
+
+%Plot_01_vs_Continuous(var_ventil=Annee);
+%Plot_01_vs_Continuous(var_ventil=Attractivite_region);
+%Plot_01_vs_Continuous(var_ventil=Attractivite_section);
+%Plot_01_vs_Continuous(var_ventil=Aggregate_impact_factor);
+%Plot_01_vs_Continuous(var_ventil=N_REGION);
+%Plot_01_vs_Continuous(var_ventil=N_SECTION);
+/*---------------------------------------------------------------------------------------------------------------------------*/
+/*					Link between explanatory variables theirselves															 */
+/*---------------------------------------------------------------------------------------------------------------------------*/
+
+%TestChisqCramer(listVar=&listvar_categ.);
+
+%TestKruskallWallis(listVarQuali=&listvar_categ., listVarConti=&listvar_conti.);
+
+%TestPearsonSpearman(listVar=&listvar_conti.);
+%Plot_MeanContinu_vs_Continu(vary=attractivite_region, varx=annee);
+%Plot_MeanContinu_vs_Continu(vary=attractivite_section, varx=annee);
+%Plot_MeanContinu_vs_Continu(vary=N_section, varx=annee);
+%Plot_MeanContinu_vs_Continu(vary=N_region, varx=annee);
+
+%CumulativePlot(varX=Annee, varY=region);
+%CumulativePlot(varX=Annee, varY=section);
+%BasicStatY_vs_X(varY=attractivite_region, varX=region);
+%BasicStatY_vs_X(varY=attractivite_section, varX=section);
+%BasicStatY_vs_X(varY=N_region, varX=region);
+%BasicStatY_vs_X(varY=N_section, varX=section);
+/*---------------------------------------------------------------------------------------------------------------------------*/
+/*													Modelisation															 */
+/*---------------------------------------------------------------------------------------------------------------------------*/
+ods output GlobalTests=mod_globaltest Type3=mod_type3 OddsRatios=mod_odr Association=mod_roc_asso;
+proc logistic data=&b. plots(only)=roc;
+	class &genre. Region annee_cat(ref="[1989-1994]") Section TAUX_FEM_PH_QUIN / param=ref;
+	model &y.(event_withformat="Femme")=annee_cat TAUX_FEM_PH_QUIN Attractivite_region Attractivite_section N_REGION N_SECTION ;
+	effectplot fit (x=Attractivite_region);
+	effectplot fit (x=Attractivite_section);
+	effectplot fit (x=N_REGION);
+	effectplot fit (x=N_SECTION);
+	ods output parameterestimates=mod_para;
+run;
+ods output close;
+
+/*---------------------------------------------------------------------------------------------------------------------------*/
+/*													Exportation																 */
+/*---------------------------------------------------------------------------------------------------------------------------*/
+
+
+/*	Freq tables		*/
+%ExportExcelWithFormat(libname=work, dataname=freq_by_region, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par region"); 
+%ExportExcelWithFormat(libname=work, dataname=freq_by_annee, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par annee");
+%ExportExcelWithFormat(libname=work, dataname=freq_by_annee_cat, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par annee catég"); 
+%ExportExcelWithFormat(libname=work, dataname=freq_by_section, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par section"); 
+%ExportExcelWithFormat(libname=work, dataname=attractivite_region_vs_region, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Attractivité région"); 
+%ExportExcelWithFormat(libname=work, dataname=attractivite_section_vs_section, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Attractivité section"); 
+%ExportExcelWithFormat(libname=work, dataname=N_region_vs_region, outputname=&path.\300 result\xls\result_&b..xls, sheetname="N région"); 
+%ExportExcelWithFormat(libname=work, dataname=N_section_vs_section, outputname=&path.\300 result\xls\result_&b..xls, sheetname="N section"); 
+
+/*	Univariate tests	*/
+%ExportExcelWithFormat(libname=work, dataname=Testchisqcramer, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Test Chisq & Cramer"); 
+%ExportExcelWithFormat(libname=work, dataname=Testkruskallwallis , outputname=&path.\300 result\xls\result_&b..xls, sheetname="Kruskall Wallis");
+%ExportExcelWithFormat(libname=work, dataname=Testpearsonspearman , outputname=&path.\300 result\xls\result_&b..xls, sheetname="Corrélations entre continues");
+
+/* Model statistics	*/
+%ExportExcelWithFormat(libname=work, dataname=mod_globaltest, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Global Test");
+%ExportExcelWithFormat(libname=work, dataname=mod_roc_asso, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Roc associations");
+%ExportExcelWithFormat(libname=work, dataname=mod_type3, outputname=&path.\300 result\xls\result_&b..xls, sheetname="T Type 3");
+%ExportExcelWithFormat(libname=work, dataname=mod_para, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Parameters estimation");
+%ExportExcelWithFormat(libname=work, dataname=mod_odr, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Odds ratio");
+
+/*--------------------------*/
+/*			Word			*/
+/*--------------------------*/
+
+ods rtf file="&path.\300 result\rtf\result_&b..rtf" style=statistical;
+	proc print data=Genre_vs_Region;
+	proc print data=Genre_vs_annee;
+	proc print data=Genre_vs_annee_cat;
+	proc print data=Genre_vs_section;
+	proc print data=Testchisqcramer;
+	proc print data=corr;
+	proc print data=Testkruskallwallis;
+	proc print data=mod_globaltest;
+	proc print data=mod_roc_asso;
+	proc print data=mod_type3;
+	proc print data=mod_para;
+	proc print data=mod_odr;
+	run;
+ods rtf close;
