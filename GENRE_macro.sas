@@ -5,7 +5,7 @@
 		tables &var_ventil.*&var01_prop./nocol norow nopercent out=freq;
 	run;
 /* Calculation of percentage	*/
-	proc sql noprint;
+	proc sql noprint; 
 		delete from freq
 		where &var_ventil. is missing or &var01_prop. is missing;
 		create table freq_by_&var_ventil. as
@@ -106,10 +106,10 @@
 			create table TestPearsonSpearman
 				(	var1 char(40) label='Variable 1',
 					var2 char(40) label='Variable 2',
-					c_pearson num format=10.4 label='Coefficient de corrÈlation de Pearson',
-					pval_pearson num format=pvalue6.4 label='P-value test de de nullitÈ de la corrÈlation de Pearson',
-					c_spearman num format=10.4 label='Coefficient de corrÈlation de Spearman',
-					pval_spearman num format=pvalue6.4 label='P-value test de de nullitÈ de la corrÈlation de Spearman');
+					c_pearson num format=10.4 label='Coefficient de corr√©lation de Pearson',
+					pval_pearson num format=pvalue6.4 label='P-value test de de nullit√© de la corr√©lation de Pearson',
+					c_spearman num format=10.4 label='Coefficient de corr√©lation de Spearman',
+					pval_spearman num format=pvalue6.4 label='P-value test de de nullit√© de la corr√©lation de Spearman');
 	quit;
 
 	
@@ -188,8 +188,6 @@
 	quit;
 %mend TestKruskallWallis;
 
-%TestKruskallWallis(&genre. TAUX_FEM_PH_QUIN section annee_cat region, Attractivite_region Attractivite_section Aggregate_impact_factor N_Region N_Section);
-
 /*	Produces a table with cumulative proportion of individuals presents in the base 'base' depending on 2 categorical variables */
 %macro PropCumulativeTable(varX=, varY=, base=&b., illustrative=nothing);
 		/*	Generates the contingency table which must be import by an ODS. Otherwise zero aren't accounted. */
@@ -246,7 +244,7 @@
 	quit;
 	/*	Plot parametrization	*/
 	axis1 label=("&varX.");
-	axis2 label=('Proportion cumulÈe');
+	axis2 label=('Proportion cumul√©e');
 	symbol1 interpol=join;
 	symbol2 interpol=join;
 	proc gplot data=&varY._vs_&varX.;
@@ -254,3 +252,59 @@
 	run;
 	quit;	
 %mend CumulativePlot;
+
+/*	Creates a table named 'pred_wanted' containing predictions of the probabilities ot varY01 depending on varX	*/
+%macro pred_logi(varY01= , mod_event=, varX=, base=, Xmax_pred=);
+	proc sql noprint;
+		select max(&varX.) into : maxX from &base.;		/*	Maximum of the variable X	(to know when we begin to predict)	*/
+	quit;
+	%let nb_pred=%eval(&Xmax_pred.-&maxX.);				/*	Number of predictions made	*/
+	/*	Construction of a dataset with missing responses for the levels of variable which we want to predict	*/
+	data learning_data;								
+		set &base. (keep=&varY01. &varX.);
+	data pred_wanted (keep=&varX.);
+		set &base. (obs=&nb_pred.);
+		&varX.=&maxX.+_n_;
+	data pred_wanted;		/*	Add of missing responses at the end of the learning table */
+		set learning_data pred_wanted;
+	/*	Machin learning	*/
+	proc logistic data=pred_wanted;
+		class &varY01.;
+		model &varY01.(event="&mod_event.")=&varX.;
+		output out=pred_wanted2 p=estimate l=lower95 u=upper95 ;
+	run;
+
+	proc sql noprint;
+		drop table learning_data;
+		drop table pred_wanted;
+		/*	Deleting of duplicates X variables */
+		create table pred_wanted as
+		select distinct annee label "Ann√©e", estimate label "Pr√©diction", lower95 label "Pr√©diction basse", upper95 label "Pr√©diction haute"
+		from pred_wanted2;
+		drop table pred_wanted2;
+	quit;
+	
+%mend pred_logi;
+
+/*	Generates a plot containing predictions of 'pred_logi' macro	*/
+%macro plot_pred_logi(varY01= , mod_event=, varX=, base=, Xmax_pred=);
+	%pred_logi(varY01=&varY01., mod_event=&mod_event., varX=&varX., base=&base., Xmax_pred=&Xmax_pred.);
+	/*	Searching threshold value of varX where lower and upper probabilities of varY01 exceed 50%	*/
+	proc sql inobs=1 noprint;
+		select &varX. into : lower50
+		from pred_wanted
+		where lower95>0.5
+		order by &varX. asc;
+		select &varX. into : upper50
+		from pred_wanted
+		where upper95>0.5
+		order by &varX. asc;
+	quit;
+	%put &upper50. &lower50.;
+	/*	Plot parametrization	*/
+	axis1 label=("&varX.");
+	axis2 label=("Probabilit√© de la modalit√© &mod_event.");
+	proc gplot data=pred_wanted;
+		plot (lower95 estimate upper95)*&varX./overlay vaxis=axis2 haxis=axis1 href=&upper50. &lower50. vref=0.5;
+	run;
+%mend plot_pred_logi;
