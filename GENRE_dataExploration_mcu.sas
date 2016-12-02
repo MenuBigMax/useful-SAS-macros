@@ -2,11 +2,11 @@
 /*							DATA EXPLORATION																		*/
 /********************************************************************************************************************/
 
-%let b=mcutot;					/*	Current database (can be modified depending model)	*/
-%let genre=Genre_mcu;			/*	Gender doesn't have the same name depending model	*/
+%let b=pufin;					/*	Current database (can be modified depending model)	*/
+%let genre=genre_pu;			/*	Gender doesn't have the same name depending model	*/
 %let y=&genre.;			/*	In model 1, the response variable is the gender. In model 2, it is the type of nomination	*/
 %let event_noformat=f;						/*	Event to predic in macro using sql			*/
-%let event_withformat=femme;				/*	Event to predic in the logistic procedire	*/
+%let event_withformat=Femme;				/*	Event to predic in the logistic procedire	*/
 %let listvar_conti=Attractivite_region Attractivite_section Aggregate_impact_factor N_Region N_Section;
 %let listvar_categ=nomination &genre. TAUX_FEM_PH_QUIN Section Sous_section annee_cat annee region;
 
@@ -69,10 +69,10 @@ run;
 /*---------------------------------------------------------------------------------------------------------------------------*/
 /*													Modelisation															 */
 /*---------------------------------------------------------------------------------------------------------------------------*/
-ods output GlobalTests=mod_globaltest Type3=mod_type3 OddsRatios=mod_odr Association=mod_roc_asso;
+ods output FitStatistics=fit_stat GlobalTests=mod_globaltest Type3=mod_type3 OddsRatios=mod_odr Association=mod_roc_asso;
 proc logistic data=&b. plots(only)=roc;
 	class &genre. Region annee_cat(ref="[1989-1994]") Section TAUX_FEM_PH_QUIN / param=ref;
-	model &y.(event_withformat="Femme")=annee_cat TAUX_FEM_PH_QUIN Attractivite_region Attractivite_section N_REGION N_SECTION ;
+	model &y.(event="&event_withformat.")=annee_cat /*TAUX_FEM_PH_QUIN*/ Attractivite_region Attractivite_section N_REGION N_SECTION ;
 	effectplot fit (x=Attractivite_region);
 	effectplot fit (x=Attractivite_section);
 	effectplot fit (x=N_REGION);
@@ -80,6 +80,9 @@ proc logistic data=&b. plots(only)=roc;
 	ods output parameterestimates=mod_para;
 run;
 ods output close;
+
+%plot_pred_logi(varY01=&y. , mod_event=&event_withformat., mod_event_noformat=&event_noformat., varX=annee, base=&b., Xmax_pred=2060, alpha=0.1, by=5);
+
 
 /*---------------------------------------------------------------------------------------------------------------------------*/
 /*													Exportation																 */
@@ -89,19 +92,20 @@ ods output close;
 /*	Freq tables		*/
 %ExportExcelWithFormat(libname=work, dataname=freq_by_region, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par region"); 
 %ExportExcelWithFormat(libname=work, dataname=freq_by_annee, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par annee");
-%ExportExcelWithFormat(libname=work, dataname=freq_by_annee_cat, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par annee catég"); 
+%ExportExcelWithFormat(libname=work, dataname=freq_by_annee_cat, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par annee catÃ©g"); 
 %ExportExcelWithFormat(libname=work, dataname=freq_by_section, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Freq F par section"); 
-%ExportExcelWithFormat(libname=work, dataname=attractivite_region_vs_region, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Attractivité région"); 
-%ExportExcelWithFormat(libname=work, dataname=attractivite_section_vs_section, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Attractivité section"); 
-%ExportExcelWithFormat(libname=work, dataname=N_region_vs_region, outputname=&path.\300 result\xls\result_&b..xls, sheetname="N région"); 
+%ExportExcelWithFormat(libname=work, dataname=attractivite_region_vs_region, outputname=&path.\300 result\xls\result_&b..xls, sheetname="AttractivitÃ© rÃ©gion"); 
+%ExportExcelWithFormat(libname=work, dataname=attractivite_section_vs_section, outputname=&path.\300 result\xls\result_&b..xls, sheetname="AttractivitÃ© section"); 
+%ExportExcelWithFormat(libname=work, dataname=N_region_vs_region, outputname=&path.\300 result\xls\result_&b..xls, sheetname="N rÃ©gion"); 
 %ExportExcelWithFormat(libname=work, dataname=N_section_vs_section, outputname=&path.\300 result\xls\result_&b..xls, sheetname="N section"); 
 
 /*	Univariate tests	*/
 %ExportExcelWithFormat(libname=work, dataname=Testchisqcramer, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Test Chisq & Cramer"); 
 %ExportExcelWithFormat(libname=work, dataname=Testkruskallwallis , outputname=&path.\300 result\xls\result_&b..xls, sheetname="Kruskall Wallis");
-%ExportExcelWithFormat(libname=work, dataname=Testpearsonspearman , outputname=&path.\300 result\xls\result_&b..xls, sheetname="Corrélations entre continues");
+%ExportExcelWithFormat(libname=work, dataname=Testpearsonspearman , outputname=&path.\300 result\xls\result_&b..xls, sheetname="CorrÃ©lations entre continues");
 
 /* Model statistics	*/
+%ExportExcelWithFormat(libname=work, dataname=fit_stat, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Fit Stat");
 %ExportExcelWithFormat(libname=work, dataname=mod_globaltest, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Global Test");
 %ExportExcelWithFormat(libname=work, dataname=mod_roc_asso, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Roc associations");
 %ExportExcelWithFormat(libname=work, dataname=mod_type3, outputname=&path.\300 result\xls\result_&b..xls, sheetname="T Type 3");
