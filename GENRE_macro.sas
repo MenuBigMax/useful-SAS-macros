@@ -4,10 +4,10 @@
 	proc freq data=&base. noprint;
 		tables &var_ventil.*&var01_prop./nocol norow nopercent out=freq;
 	run;
-/* Calculation of percentage	*/
+	/* Calculation of percentage	*/
 	proc sql noprint; 
 		delete from freq
-		where &var_ventil. is missing or &var01_prop. is missing;
+			where &var_ventil. is missing or &var01_prop. is missing;
 		create table freq_by_&var_ventil. as
 			select *, sum(COUNT) as total label "Total de : &var01_prop.", COUNT/sum(COUNT) AS percent2 label "Pourcentage de &mod_of_interest. dans &var01_prop."
 			from freq
@@ -20,7 +20,6 @@
 		drop percent, &var01_prop.;
 	quit;
 %mend Prop_by_var;
-
 
 /* To display a plot with proportion of females depending on an continuous indicator */
 %macro Plot_01_vs_Continuous(var01_prop=&y., mod_of_interest=&event_noformat., var_ventil=, base=&b.);
@@ -253,58 +252,95 @@
 	quit;	
 %mend CumulativePlot;
 
-/*	Creates a table named 'pred_wanted' containing predictions of the probabilities ot varY01 depending on varX	*/
-%macro pred_logi(varY01= , mod_event=, varX=, base=, Xmax_pred=);
+
+/*	Generates a table named 'ini_*' with 'nbRow' rows and with only one identification column	*/
+%macro init_table(nbRow=);
+	data init_&nbRow.r;
+		format id best12.;
+		%do id=1 %to &nbRow.;
+			id=&id.;
+			output;
+		%end;
+	run;
+%mend init_table;
+%init_table(nbRow=536);
+
+
+/*	Generates a table names 'new_*' which is the table 'base' with new values for the 'varToAd' variable */
+%macro add_new_values(base=, varToAd=, varToMakeMissing=, Xmax_pred=);
 	proc sql noprint;
-		select max(&varX.) into : maxX from &base.;		/*	Maximum of the variable X	(to know when we begin to predict)	*/
+		select max(&varToAd.) into : maxX from &base.;		/*	Maximum of the variable X	(to know when we begin to predict)	*/
 	quit;
-	%let nb_pred=%eval(&Xmax_pred.-&maxX.);				/*	Number of predictions made	*/
+	%let nb_pred=%eval(&Xmax_pred.-&maxX.);					/*	Number of new values to add	*/
 	/*	Construction of a dataset with missing responses for the levels of variable which we want to predict	*/
 	data learning_data;								
-		set &base. (keep=&varY01. &varX.);
-	data pred_wanted (keep=&varX.);
-		set &base. (obs=&nb_pred.);
-		&varX.=&maxX.+_n_;
-	data pred_wanted;		/*	Add of missing responses at the end of the learning table */
-		set learning_data pred_wanted;
-	/*	Machin learning	*/
-	proc logistic data=pred_wanted;
-		class &varY01.;
-		model &varY01.(event="&mod_event.")=&varX.;
-		output out=pred_wanted2 p=estimate l=lower95 u=upper95 ;
+		set &base. (keep=&varToAd. &varToMakeMissing.);
 	run;
-
+	%init_table(nbRow=&nb_pred.);										/*	Artificial table generated to be sure to have the asked number of rows	*/
+	data new_&varToAd. (keep=&varToAd.);
+		set init_&nb_pred.r (obs=&nb_pred.);								
+		&varToAd.=&maxX.+_n_;
+	data new_&varToAd.;											/*	Add of missing responses at the end of the learning table */
+		set learning_data new_&varToAd.;
+	run;
 	proc sql noprint;
 		drop table learning_data;
-		drop table pred_wanted;
+		drop table init_&nb_pred.r;
+	quit;
+%mend add_new_values;
+
+
+/*	Creates a table named 'pred_wanted' containing predictions of the probabilities ot varY01 depending on varX	*/
+%macro pred_logi(varY01= , mod_event=, mod_event_noformat=, varX=, base=, Xmax_pred=, alpha=0.05);
+	%add_new_values(base=&base., varToAd=&varX., varToMakeMissing=&varY01., Xmax_pred=&Xmax_pred.);
+	
+	/*	Machin learning	*/
+	proc logistic data=new_&varX.;
+		class &varY01.;
+		model &varY01.(event="&mod_event.")=&varX.;
+		output out=pred_wanted p=estimate l=lower u=upper / alpha=&alpha. ;
+	run;
+	
+	%let aff_alpha=%sysevalf((1-&alpha.)*100);	/*	%sysevalf for decimals, %eval for integers			*/
+	
+	%Prop_by_var(var01_prop=&varY01., mod_of_interest=&mod_event_noformat., var_ventil=&varX., base=&base.);
+	proc sql noprint;
+		drop table learning_data;
+		drop table new_&varX.;
 		/*	Deleting of duplicates X variables */
 		create table pred_wanted as
-		select distinct annee label "Année", estimate label "Prédiction", lower95 label "Prédiction basse", upper95 label "Prédiction haute"
-		from pred_wanted2;
-		drop table pred_wanted2;
-	quit;
-	
+		select distinct annee label "Année", estimate label "Prédiction", lower label "Borne sup de l'IC à &aff_alpha.%", upper label "Borne inf de l'IC à &aff_alpha.%"
+		from pred_wanted;
+		/*	Adding of real proportions of 'varY01'	*/
+		create table pred_wanted as
+			select a.annee, a.estimate, a.upper, a.lower, b.percent2 label "Taux réel de &mod_event.", b.total label "Nombre total de &varY01."
+			from pred_wanted as a full join freq_by_annee as b on a.annee=b.annee;
+	quit;	
 %mend pred_logi;
 
 /*	Generates a plot containing predictions of 'pred_logi' macro	*/
-%macro plot_pred_logi(varY01= , mod_event=, varX=, base=, Xmax_pred=);
-	%pred_logi(varY01=&varY01., mod_event=&mod_event., varX=&varX., base=&base., Xmax_pred=&Xmax_pred.);
-	/*	Searching threshold value of varX where lower and upper probabilities of varY01 exceed 50%	*/
+%macro plot_pred_logi(varY01= , mod_event=, mod_event_noformat=, varX=, base=, Xmax_pred=, alpha=0.05, by=);
+	%pred_logi(varY01=&varY01., mod_event=&mod_event., mod_event_noformat=&mod_event_noformat., varX=&varX., base=&base., Xmax_pred=&Xmax_pred., alpha=&alpha.);
+	/*	Searching threshold values of varX where lower and upper probabilities of varY01 exceed 50%	*/
 	proc sql inobs=1 noprint;
-		select &varX. into : lower50
-		from pred_wanted
-		where lower95>0.5
-		order by &varX. asc;
-		select &varX. into : upper50
-		from pred_wanted
-		where upper95>0.5
-		order by &varX. asc;
+		select &varX. into : lower50 from pred_wanted where lower>0.5 order by &varX. asc;
+		select &varX. into : upper50 from pred_wanted where upper>0.5 order by &varX. asc;
 	quit;
-	%put &upper50. &lower50.;
+	proc sql noprint;
+		select max(&varX.) into : max from pred_wanted;
+		select min(&varX.) into : min from pred_wanted;
+	quit;
+	%let min2=%eval(%sysfunc(round(&min./10))*10);
+	%put &min2.;
 	/*	Plot parametrization	*/
-	axis1 label=("&varX.");
-	axis2 label=("Probabilité de la modalité &mod_event.");
-	proc gplot data=pred_wanted;
-		plot (lower95 estimate upper95)*&varX./overlay vaxis=axis2 haxis=axis1 href=&upper50. &lower50. vref=0.5;
+	%let aff_alpha=%sysevalf((1-&alpha.)*100);	/*	%sysevalf for decimals, %eval for integers			*/
+	proc sgplot data=pred_wanted;
+		band x=&varX. lower=lower upper=upper /legendlabel="IC à &aff_alpha.%";
+		bubble x=&varX. y=percent2 size=total / BRADIUSMIN=1 BRADIUSMAX=8 TRANSPARENCY=0.6;
+		series x=&varX. y=estimate;
+		refline &lower50. &upper50./ axis=x;
+		refline 0.5 /axis=y;
+		yaxis label="Probabilité de la modalité &mod_event. pour la base &base.";
+		xaxis values=(&min2. to &max. by &by.);
 	run;
 %mend plot_pred_logi;
