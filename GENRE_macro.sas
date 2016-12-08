@@ -1,9 +1,31 @@
+/*	Modify the table 'base' to see all modalities of variables 'v1' and 'v2' even if their crossed frequency is 0. 'Table' ideally needs to be issued by a proc freq	*/
+%macro Add_missing_freq(v1=, v2=, base=);
+	proc sql noprint;
+		/*	Distinct values of 'v1' and 'v2'	*/
+		create table temp_A as select distinct &v1. from &base.;
+		create table temp_B as select distinct &v2. from &base.;
+		/*	Cross table with all levels of 'v1' and 'v2'	*/
+ 		create table temp_C as select * from temp_A cross join temp_B order by &v1., &v2.;
+		/*	Addition of frequencies of 'base'	*/
+		create table &base. as
+			select temp_C.*, &base..count
+			from temp_C left join &base.	/*	All levels of C joined variables will be in the table (even if their frequency is missing in 'base') */
+			on temp_C.&v1.=&base..&v1. and temp_C.&v2.=&base..&v2.;
+		drop table temp_A, temp_B, temp_C;
+	quit;
+	data &base.;
+		set &base.;
+		if count=. then count=0; 
+	run;
+%mend Add_mod_missing_freq;
+
 /* Produce a dataset called 'freq_by_....' where each row concerns a distinct modality of var01 and contains the proportion of women */
 %macro Prop_by_var(var01_prop=&y., mod_of_interest=&event_noformat., var_ventil=, base=&b.);
 	/*	Contingengy table : stored with a one number of individuals by row	*/
 	proc freq data=&base. noprint;
 		tables &var_ventil.*&var01_prop./nocol norow nopercent out=freq;
 	run;
+	%Add_missing_freq(v1=&var_ventil., v2=&var01_prop., base=freq);
 	/* Calculation of percentage	*/
 	proc sql noprint; 
 		delete from freq
@@ -148,8 +170,7 @@
 		%end;
 	%end;
 	proc sql;
-		drop table corr_pearson;
-		drop table corr_spearman;
+		drop table corr_pearson, corr_spearman;
 	quit;
 %mend TestPearsonSpearman;
 
@@ -263,7 +284,6 @@
 		%end;
 	run;
 %mend init_table;
-%init_table(nbRow=536);
 
 
 /*	Generates a table names 'new_*' which is the table 'base' with new values for the 'varToAd' variable */
@@ -284,8 +304,7 @@
 		set learning_data new_&varToAd.;
 	run;
 	proc sql noprint;
-		drop table learning_data;
-		drop table init_&nb_pred.r;
+		drop table learning_data, init_&nb_pred.r;
 	quit;
 %mend add_new_values;
 
@@ -305,8 +324,7 @@
 	
 	%Prop_by_var(var01_prop=&varY01., mod_of_interest=&mod_event_noformat., var_ventil=&varX., base=&base.);
 	proc sql noprint;
-		drop table learning_data;
-		drop table new_&varX.;
+		drop table learning_data, new_&varX.;
 		/*	Deleting of duplicates X variables */
 		create table pred_wanted as
 		select distinct annee label "Année", estimate label "Prédiction", lower label "Borne sup de l'IC à &aff_alpha.%", upper label "Borne inf de l'IC à &aff_alpha.%"
