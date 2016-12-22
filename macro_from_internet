@@ -1,0 +1,33 @@
+%macro ExportExcelWithFormat(libname=,dataname=,outputname=,sheetname=);
+	proc sql noprint;
+		create table tmp_vars as
+			select name,format from dictionary.columns
+			where libname=upcase("&libname.") and memname=upcase("&dataname.");
+	quit;
+	data tmp_vars;
+		set tmp_vars end=last;
+		length formatcode $400.;
+		if format ^="" then formatcode=catx(" ",cats("put","(",name,",",format,")"),"as",name,",");
+		else formatcode=cats(name,",");
+		if last then formatcode=substr(formatcode,1,length(formatcode)-1);
+	run;
+	%let formatcodes=;
+	data _null_;
+		set tmp_vars;
+		call symput('formatcodes', trim(resolve('&formatcodes.')||' '||trim
+		(formatcode)));
+	run;
+	proc sql;
+		create view tmp_view as
+		select &formatcodes.
+		from &libname..&dataname.;
+	quit;
+	%let formatcodes=%str();
+	PROC EXPORT DATA= tmp_view OUTFILE= "&outputname." DBMS=EXCEL REPLACE label;
+		SHEET=&sheetname.;
+	RUN;
+	proc sql;
+		drop table tmp_vars;
+		drop view tmp_view;
+	quit;
+%mend;
