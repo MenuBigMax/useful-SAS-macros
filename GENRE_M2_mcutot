@@ -2,8 +2,8 @@
 /*							DATA EXPLORATION																		*/
 /********************************************************************************************************************/
 
-%let b=pufin;					/*	Current database (can be modified depending model)	*/
-%let genre=genre_pu;			/*	Gender doesn't have the same name depending model	*/
+%let b=mcutot;					/*	Current database (can be modified depending model)	*/
+%let genre=Genre_mcu;			/*	Gender doesn't have the same name depending model	*/
 %let y=&genre.;			/*	In model 1, the response variable is the gender. In model 2, it is the type of nomination	*/
 %let event_noformat=f;						/*	Event to predic in macro using sql			*/
 %let event_withformat=Femme;				/*	Event to predic in the logistic procedire	*/
@@ -17,19 +17,20 @@ ods html path="&path.\300 result\images\&b.";
 /*			Link between response (gender) and different explanatory variables												 */
 /*---------------------------------------------------------------------------------------------------------------------------*/
 
+
+
 /*	Difference of representation of qualitativ variables depending gender	*/
 %Prop_by_var(var_ventil=Section);
 %Prop_by_var(var_ventil=annee);
 %Prop_by_var(var_ventil=annee_cat);
 %Prop_by_var(var_ventil=Region);
-%Prop_by_var(var_ventil=Section);
 
 
 /*	Difference in the distribution of quantitativ variables depending gender	*/
 
 /* Boxplots */
 proc sort data=&b.;
-	by &genre.;
+	by &y.;
 proc boxplot data=&b.;
 	plot(Attractivite_region Attractivite_section Aggregate_impact_factor)*&y.;
 run;
@@ -46,6 +47,8 @@ run;
 %Plot_01_vs_Continuous(var_ventil=Aggregate_impact_factor);
 %Plot_01_vs_Continuous(var_ventil=N_REGION);
 %Plot_01_vs_Continuous(var_ventil=N_SECTION);
+
+
 /*---------------------------------------------------------------------------------------------------------------------------*/
 /*					Link between explanatory variables theirselves															 */
 /*---------------------------------------------------------------------------------------------------------------------------*/
@@ -62,6 +65,7 @@ run;
 
 %CumulativePlot(varX=Annee, varY=region);
 %CumulativePlot(varX=Annee, varY=section);
+
 %BasicStatY_vs_X(varY=attractivite_region, varX=region);
 %BasicStatY_vs_X(varY=attractivite_section, varX=section);
 %BasicStatY_vs_X(varY=N_region, varX=region);
@@ -69,19 +73,20 @@ run;
 /*---------------------------------------------------------------------------------------------------------------------------*/
 /*													Modelisation															 */
 /*---------------------------------------------------------------------------------------------------------------------------*/
-ods output FitStatistics=fit_stat GlobalTests=mod_globaltest Type3=mod_type3 OddsRatios=mod_odr Association=mod_roc_asso;
+ods output FitStatistics=fit_stat RSquare=rsquare GlobalTests=mod_globaltest Type3=mod_type3 OddsRatios=mod_odr Association=mod_roc_asso;
 proc logistic data=&b. plots(only)=roc;
-	class &genre. Region annee_cat(ref="[1989-1994]") Section TAUX_FEM_PH_QUIN / param=ref;
-	model &y.(event="&event_withformat.")=annee_cat /*TAUX_FEM_PH_QUIN*/ Attractivite_region Attractivite_section N_REGION N_SECTION ;
-	effectplot fit (x=Attractivite_region);
+	class &genre. Region annee_cat(ref="[1989-1994]") Section TAUX_FEM_PH_QUIN(ref="[0-32%[") / param=ref;
+	model &y.(event="&event_withformat.")=annee_cat  Attractivite_region Attractivite_section N_REGION N_SECTION /*TAUX_FEM_PH_QUIN*/ / rsq;
+	/*effectplot fit (x=Attractivite_region);
 	effectplot fit (x=Attractivite_section);
 	effectplot fit (x=N_REGION);
-	effectplot fit (x=N_SECTION);
+	effectplot fit (x=N_SECTION);*/
 	ods output parameterestimates=mod_para;
 run;
 ods output close;
 
-%plot_pred_logi(varY01=&y. , mod_event=&event_withformat., mod_event_noformat=&event_noformat., varX=annee, base=&b., Xmax_pred=2060, alpha=0.1, by=5);
+%plot_pred_logi(varY01=&y. , mod_event=&event_withformat., mod_event_noformat=&event_noformat., varX=annee, base=&b., Xmax_pred=2050, alpha=0.1, by=5);
+
 
 
 /*---------------------------------------------------------------------------------------------------------------------------*/
@@ -106,6 +111,7 @@ ods output close;
 
 /* Model statistics	*/
 %ExportExcelWithFormat(libname=work, dataname=fit_stat, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Fit Stat");
+%ExportExcelWithFormat(libname=work, dataname=rsquare, outputname=&path.\300 result\xls\result_&b..xls, sheetname="R squared");
 %ExportExcelWithFormat(libname=work, dataname=mod_globaltest, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Global Test");
 %ExportExcelWithFormat(libname=work, dataname=mod_roc_asso, outputname=&path.\300 result\xls\result_&b..xls, sheetname="Roc associations");
 %ExportExcelWithFormat(libname=work, dataname=mod_type3, outputname=&path.\300 result\xls\result_&b..xls, sheetname="T Type 3");
